@@ -109,7 +109,7 @@ Visualization Manager:
       Size (Pixels): 3
       Size (m): 0.009999999776482582
       Style: Flat Squares
-      Topic: /sick_front/scan
+      Topic: scan1
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true
@@ -139,7 +139,7 @@ Visualization Manager:
       Size (Pixels): 3
       Size (m): 0.009999999776482582
       Style: Flat Squares
-      Topic: /sick_back/scan
+      Topic: /scan2
       Unreliable: false
       Use Fixed Frame: true
       Use rainbow: true

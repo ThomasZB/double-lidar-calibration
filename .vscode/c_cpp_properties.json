@@ -1,0 +1,31 @@
+{
+  "configurations": [
+    {
+      "browse": {
+        "databaseFilename": "${default}",
+        "limitSymbolsToIncludedHeaders": false
+      },
+      "includePath": [
+        "/home/thomas/catkin_ws/devel/include/**",
+        "/home/thomas/Code/catkin_carto/install_isolated/include/**",
+        "/opt/ros/melodic/include/**",
+        "/home/thomas/catkin_ws/src/hector_slam/hector_geotiff/include/**",
+        "/home/thomas/catkin_ws/src/hector_slam/hector_map_tools/include/**",
+        "/home/thomas/catkin_ws/src/hector_slam/hector_mapping/include/**",
+        "/home/thomas/catkin_ws/src/hector_slam/hector_marker_drawing/include/**",
+        "/home/thomas/catkin_ws/src/imu_test/include/**",
+        "/home/thomas/catkin_ws/src/mbot_calibration/include/**",
+        "/home/thomas/catkin_ws/src/mlcc/include/**",
+        "/home/thomas/catkin_ws/src/multi_lidar_calibration/include/**",
+        "/home/thomas/catkin_ws/src/pointcloud_to_laserscan_melodic/include/**",
+        "/usr/include/**"
+      ],
+      "name": "ROS",
+      "intelliSenseMode": "gcc-x64",
+      "compilerPath": "/usr/bin/gcc",
+      "cStandard": "gnu11",
+      "cppStandard": "c++14"
+    }
+  ],
+  "version": 4
+}
