@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.0.2)
 project(multi_lidar_calibration)
-
+set(CMAKE_CXX_STANDARD 14) 
 ## Compile as C++11, supported in ROS Kinetic and newer
 add_compile_options(-std=c++11)
 
@@ -109,7 +109,7 @@ find_package(PCL REQUIRED QUIET)
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
- INCLUDE_DIRS include
+#  INCLUDE_DIRS include
 #  LIBRARIES multi_lidar_calibration
  CATKIN_DEPENDS pcl_ros sensor_msgs std_msgs tf
 #  DEPENDS system_lib

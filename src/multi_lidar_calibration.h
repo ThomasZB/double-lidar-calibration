@@ -25,9 +25,11 @@
 #include <ros/ros.h>
 #include <sensor_msgs/LaserScan.h>
 #include <tf2/utils.h>
+#include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/transform_listener.h>
 
 #include <iostream>
+#include <memory>
 #include <vector>
 
 class MultiLidarCalibration {
@@ -39,6 +41,30 @@ class MultiLidarCalibration {
   void Run();
 
  private:
+  // 两个激光坐标系间初始坐标变换
+  void GetFrontLasertoBackLaserTf();
+
+  // 订阅main雷达和sub雷达两个激光数据
+  void ScanCallBack(const sensor_msgs::LaserScan::ConstPtr &in_main_scan_msg,
+                    const sensor_msgs::LaserScan::ConstPtr &in_sub_scan_msg);
+
+  // 极坐标转换到笛卡尔坐标，sensor_msgs::LaserScan to
+  // pcl::PointCloud<pcl::PointXYZ> (方法很多不限于这一种)
+  pcl::PointCloud<pcl::PointXYZ> ConvertScantoPointCloud(
+      const sensor_msgs::LaserScan::ConstPtr &scan_msg);
+
+  // 标定后的激光点云进行发布，发布的数据格式是sensor_msgs::PointCloud2
+  void PublishCloud(
+      pcl::PointCloud<pcl::PointXYZ>::Ptr &in_cloud_to_publish_ptr);
+
+  // 对main雷达和sub雷达的激光点云进行icp匹配
+  bool ScanRegistration();
+
+  // 发布标定结果
+  void GetResult();
+
+  // 可视化
+  void View();
   // 订阅的激光话题
   std::string source_lidar_topic_str_;
   std::string target_lidar_topic_str_;
@@ -46,15 +72,10 @@ class MultiLidarCalibration {
   // 激光雷达坐标系
   std::string source_lidar_frame_str_;
   std::string target_lidar_frame_str_;
+  std::string pointcloud_frame_str_;
 
   // icp匹配得分
   float icp_score_;
-
-  //  在base_link坐标系下main_laser_link的坐标
-  float main_to_base_transform_x_;
-  float main_to_base_transform_y_;
-  float main_to_base_transform_row_;
-  float main_to_base_transform_yaw_;
 
   // 第一次运行时进行矩阵赋值
   bool is_first_run_;
@@ -90,34 +111,11 @@ class MultiLidarCalibration {
   pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp_;
   pcl::PointCloud<pcl::PointXYZ>::Ptr final_registration_scan_;
 
-  // 两个激光坐标系间初始坐标变换
-  void GetFrontLasertoBackLaserTf();
-
-  // 订阅main雷达和sub雷达两个激光数据
-  void ScanCallBack(const sensor_msgs::LaserScan::ConstPtr &in_main_scan_msg,
-                    const sensor_msgs::LaserScan::ConstPtr &in_sub_scan_msg);
-
-  // 极坐标转换到笛卡尔坐标，sensor_msgs::LaserScan to
-  // pcl::PointCloud<pcl::PointXYZ> (方法很多不限于这一种)
-  pcl::PointCloud<pcl::PointXYZ> ConvertScantoPointCloud(
-      const sensor_msgs::LaserScan::ConstPtr &scan_msg);
-
-  // 标定后的激光点云进行发布，发布的数据格式是sensor_msgs::PointCloud2
-  void PublishCloud(
-      pcl::PointCloud<pcl::PointXYZ>::Ptr &in_cloud_to_publish_ptr);
-
-  // 对main雷达和sub雷达的激光点云进行icp匹配
-  bool ScanRegistration();
-
-  // 发布标定结果
-  void PrintResult();
-
-  // 可视化
-  void View();
   const double time_constant_;
   ros::Time last_linear_acceleration_time_;
   Eigen::Vector3f laset_eulerAngle_;
   Eigen::Vector3f last_transform_;
+  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 };
 
 #endif  // MULTI_LIDAR_CALIBRATION_H_

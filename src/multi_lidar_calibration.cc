@@ -7,10 +7,13 @@
 
 #include "multi_lidar_calibration.h"
 
+#include <geometry_msgs/TransformStamped.h>
+
 #include <chrono>
 
 MultiLidarCalibration::MultiLidarCalibration(ros::NodeHandle &n)
-    : nh_(n),
+    : pointcloud_frame_str_("calibration_pointcloud"),
+      nh_(n),
       time_constant_(10),
       last_linear_acceleration_time_(ros::Time(0)),
       laset_eulerAngle_(Eigen::Vector3f::Identity()),
@@ -27,15 +30,6 @@ MultiLidarCalibration::MultiLidarCalibration(ros::NodeHandle &n)
                          target_lidar_frame_str_, "main_laser_link");
   nh_.param<float>("/multi_lidar_calibration_node/icp_score", icp_score_,
                    5.5487);
-  nh_.param<float>("/multi_lidar_calibration_node/main_to_base_transform_x",
-                   main_to_base_transform_x_, 0.352);
-  nh_.param<float>("/multi_lidar_calibration_node/main_to_base_transform_y",
-                   main_to_base_transform_y_, 0.224);
-  nh_.param<float>("/multi_lidar_calibration_node/main_to_base_transform_row",
-                   main_to_base_transform_row_, -3.1415926);
-
-  nh_.param<float>("/multi_lidar_calibration_node/main_to_base_transform_yaw",
-                   main_to_base_transform_yaw_, 2.35619);
 
   // 发布转换后的激光点云
   final_point_cloud_pub_ =
@@ -44,10 +38,10 @@ MultiLidarCalibration::MultiLidarCalibration(ros::NodeHandle &n)
   // 订阅多个激光话题
   scan_front_subscriber_ =
       new message_filters::Subscriber<sensor_msgs::LaserScan>(
-          nh_, target_lidar_topic_str_, 1);
+          nh_, source_lidar_topic_str_, 1);
   scan_back_subscriber_ =
       new message_filters::Subscriber<sensor_msgs::LaserScan>(
-          nh_, source_lidar_topic_str_, 1);
+          nh_, target_lidar_topic_str_, 1);
   scan_synchronizer_ = new message_filters::Synchronizer<SyncPolicyT>(
       SyncPolicyT(10), *scan_front_subscriber_, *scan_back_subscriber_);
   scan_synchronizer_->registerCallback(
@@ -72,6 +66,7 @@ MultiLidarCalibration::MultiLidarCalibration(ros::NodeHandle &n)
   sub_scan_pointcloud_init_transformed_ =
       boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>(
           new pcl::PointCloud<pcl::PointXYZ>());
+  tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>();
 }
 
 MultiLidarCalibration::~MultiLidarCalibration() {}
@@ -91,6 +86,7 @@ void MultiLidarCalibration::GetFrontLasertoBackLaserTf() {
 
   geometry_msgs::TransformStamped tfGeom;
   ros::Duration(3).sleep();
+  /* 得到source到target雷达的坐标变换 */
   try {
     tfGeom =
         buffer.lookupTransform(source_lidar_frame_str_, target_lidar_frame_str_,
@@ -100,31 +96,39 @@ void MultiLidarCalibration::GetFrontLasertoBackLaserTf() {
                                                     << " t:"
                                                     << target_lidar_frame_str_);
   }
+  {
+    // tf2矩阵转换成Eigen::Matrix4f
+    Eigen::Quaternionf qw(tfGeom.transform.rotation.w,
+                          tfGeom.transform.rotation.x,
+                          tfGeom.transform.rotation.y,
+                          tfGeom.transform.rotation.z);  // tf 获得的四元数
+    Eigen::Vector3f qt(tfGeom.transform.translation.x,
+                       tfGeom.transform.translation.y,
+                       tfGeom.transform.translation.z);  // tf获得的平移向量
+    transform_martix_.block<3, 3>(0, 0) = qw.toRotationMatrix();
+    transform_martix_.block<3, 1>(0, 3) = qt;
+  }
 
-  // tf2矩阵转换成Eigen::Matrix4f
-  Eigen::Quaternionf qw(tfGeom.transform.rotation.w,
-                        tfGeom.transform.rotation.x,
-                        tfGeom.transform.rotation.y,
-                        tfGeom.transform.rotation.z);  // tf 获得的四元数
-  Eigen::Vector3f qt(tfGeom.transform.translation.x,
-                     tfGeom.transform.translation.y,
-                     tfGeom.transform.translation.z);  // tf获得的平移向量
-  // Eigen::Quaternionf qw(0, 0, 1, 0);      // tf 获得的四元数
-  // Eigen::Vector3f qt(-0.739, -0.501, 0);  // tf获得的平移向量
-  transform_martix_.block<3, 3>(0, 0) = qw.toRotationMatrix();
-  transform_martix_.block<3, 1>(0, 3) = qt;
+  /* 得到source到base_link的坐标变换 */
+  try {
+    tfGeom = buffer.lookupTransform("base_link", source_lidar_frame_str_,
+                                    ros::Time(0), ros::Duration(3.0));
+  } catch (tf2::TransformException &e) {
+    ROS_ERROR_STREAM("Lidar Transform Error ...");
+  }
+  {
+    // tf2矩阵转换成Eigen::Matrix4f
+    Eigen::Quaternionf qw(tfGeom.transform.rotation.w,
+                          tfGeom.transform.rotation.x,
+                          tfGeom.transform.rotation.y,
+                          tfGeom.transform.rotation.z);  // tf 获得的四元数
+    Eigen::Vector3f qt(tfGeom.transform.translation.x,
+                       tfGeom.transform.translation.y,
+                       tfGeom.transform.translation.z);  // tf获得的平移向量
+    front_to_base_link_.block<3, 3>(0, 0) = qw.toRotationMatrix();
+    front_to_base_link_.block<3, 1>(0, 3) = qt;
+  }
 
-  // 绝对标定的前向激光到base_link的坐标转换
-  Eigen::Vector3f rpy(main_to_base_transform_row_, 0,
-                      main_to_base_transform_yaw_);
-  Eigen::Matrix3f R;
-  R = Eigen::AngleAxisf(rpy[0], Eigen::Vector3f::UnitX()) *
-      Eigen::AngleAxisf(rpy[1], Eigen::Vector3f::UnitY()) *
-      Eigen::AngleAxisf(rpy[2], Eigen::Vector3f::UnitZ());
-  Eigen::Vector3f t(main_to_base_transform_x_, main_to_base_transform_y_, 0.35);
-
-  front_to_base_link_.block<3, 3>(0, 0) = R;
-  front_to_base_link_.block<3, 1>(0, 3) = t;
   ROS_INFO_STREAM("main_laser_link in base_link matrix=\n"
                   << front_to_base_link_);
 }
@@ -137,8 +141,27 @@ void MultiLidarCalibration::PublishCloud(
     pcl::PointCloud<pcl::PointXYZ>::Ptr &in_cloud_to_publish_ptr) {
   sensor_msgs::PointCloud2 cloud_msg;
   pcl::toROSMsg(*in_cloud_to_publish_ptr, cloud_msg);
-  cloud_msg.header.frame_id = target_lidar_frame_str_;
+  cloud_msg.header.frame_id = pointcloud_frame_str_;
   final_point_cloud_pub_.publish(cloud_msg);
+  geometry_msgs::TransformStamped t;
+  t.header.stamp = ros::Time::now();
+  t.header.frame_id = "base_link";
+  t.child_frame_id = pointcloud_frame_str_;
+
+  /* 平移 */
+  t.transform.translation.x = last_transform_[0];
+  t.transform.translation.y = last_transform_[1];
+  t.transform.translation.z = last_transform_[2];
+  /* 旋转 */
+  tf2::Quaternion q;
+  q.setRPY(0, 0, laset_eulerAngle_[2]);
+  t.transform.rotation.x = q.x();
+  t.transform.rotation.y = q.y();
+  t.transform.rotation.z = q.z();
+  t.transform.rotation.w = q.w();
+
+  // Send the transformation
+  tf_broadcaster_->sendTransform(t);
 }
 
 /**
@@ -224,7 +247,7 @@ bool MultiLidarCalibration::ScanRegistration() {
  * @brief 打印结果
  *
  */
-void MultiLidarCalibration::PrintResult() {
+void MultiLidarCalibration::GetResult() {
   if (icp_.getFitnessScore() > icp_score_) {
     return;
   }
@@ -240,27 +263,10 @@ void MultiLidarCalibration::PrintResult() {
   /* 知道main激光和base_link的坐标变换，知道main激光和sub激光的坐标变换，可以求出sub和baselink
    */
   Eigen::Matrix4f O_B_T = front_to_base_link_ * new_T;
-
-  /* 将这个结果 */
-
-  // main激光到base_link的坐标变换
-  Eigen::Matrix3f R1 = front_to_base_link_.block<3, 3>(0, 0);
-  Eigen::Vector3f t1 = front_to_base_link_.block<3, 1>(0, 3);
-
-  // 在main激光雷达坐标系下的sub雷达的坐标位置,两个激光对称放置
-  Eigen::Matrix3f R4;
-  Eigen::Vector3f t4;
-  R4 << -1, 0, 0, 0, -1, 0, 0, 0, 1;
-  t4 << -0.74, -0.5, 0;
-
-  // 变换结果是以base_link坐标系下的sub激光雷达的坐标
-  Eigen::Matrix3f R2 = R4 * R1 * R3;
-  //   Eigen::Vector3f transform = R1 * t3 + t1 + t4;
-  //   Eigen::Vector3f eulerAngle = R2.eulerAngles(0, 1, 2);
-
   Eigen::Vector3f transform = O_B_T.block<3, 1>(0, 3);
   Eigen::Vector3f eulerAngle = O_B_T.block<3, 3>(0, 0).eulerAngles(0, 1, 2);
-  /* 这里加一个指数滑动平均 */
+
+  /* 这里加一个指数滑动平均（其实角度这里由于周期模糊不能加指数平均的） */
   ros::Duration duration = ros::Time::now() - last_linear_acceleration_time_;
   last_linear_acceleration_time_ = ros::Time::now();
   const double delta_t = last_linear_acceleration_time_ > ros::Time(0)
@@ -331,9 +337,7 @@ void MultiLidarCalibration::Run() {
     return;
   }
 
-  PublishCloud(final_registration_scan_);
+  GetResult();
 
-  PrintResult();
-
-  // View();
+  PublishCloud(sub_scan_pointcloud_);
 }

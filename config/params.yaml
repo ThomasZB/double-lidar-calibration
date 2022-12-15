@@ -2,8 +2,8 @@
 source_lidar_topic: /scan1
 target_lidar_topic: /scan2
 
-source_lidar_frame: laser2
-target_lidar_frame: laser1
+source_lidar_frame: laser1
+target_lidar_frame: laser2
 
 icp_score: 5.386
 
