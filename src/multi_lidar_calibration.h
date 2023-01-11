@@ -8,6 +8,7 @@
 #ifndef MULTI_LIDAR_CALIBRATION_H_
 #define MULTI_LIDAR_CALIBRATION_H_
 
+#include <csm/csm_all.h>
 #include <geometry_msgs/Transform.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <geometry_msgs/TwistStamped.h>
@@ -52,6 +53,9 @@ class MultiLidarCalibration {
   // pcl::PointCloud<pcl::PointXYZ> (方法很多不限于这一种)
   pcl::PointCloud<pcl::PointXYZ> ConvertScantoPointCloud(
       const sensor_msgs::LaserScan::ConstPtr &scan_msg);
+  void PclToLDP(const pcl::PointCloud<pcl::PointXYZ> &pcl_src, LDP &ldp);
+  void LaserScanToLDP(const sensor_msgs::LaserScan::ConstPtr &scan_msg,
+                      LDP &ldp);
 
   // 标定后的激光点云进行发布，发布的数据格式是sensor_msgs::PointCloud2
   void PublishCloud(
@@ -65,6 +69,13 @@ class MultiLidarCalibration {
 
   // 可视化
   void View();
+
+  inline float GetRange(const pcl::PointXYZ &point) {
+    return sqrt(point.x * point.x + point.y * point.y);
+  }
+  inline float GetTheta(const pcl::PointXYZ &point) {
+    return atan2(point.y, point.x);
+  }
   // 订阅的激光话题
   std::string source_lidar_topic_str_;
   std::string target_lidar_topic_str_;
@@ -100,6 +111,7 @@ class MultiLidarCalibration {
   pcl::PointCloud<pcl::PointXYZ>::Ptr main_scan_pointcloud_;
   // 标定雷达数据
   pcl::PointCloud<pcl::PointXYZ>::Ptr sub_scan_pointcloud_;
+  LDP sub_scan_ldp_ = nullptr;
   // 通过tf2转换后的待标定的激光数据
   pcl::PointCloud<pcl::PointXYZ>::Ptr sub_scan_pointcloud_init_transformed_;
 

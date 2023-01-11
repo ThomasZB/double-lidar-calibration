@@ -19,6 +19,9 @@ find_package(catkin REQUIRED COMPONENTS
 )
 
 find_package(PCL REQUIRED QUIET)
+find_package(PkgConfig)
+pkg_check_modules(csm REQUIRED csm)
+link_directories(${csm_LIBRARY_DIRS})
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
 
@@ -125,6 +128,7 @@ include_directories(
 include
   ${catkin_INCLUDE_DIRS}
   ${PCL_INCLUDE_DIRS}
+  ${csm_INCLUDE_DIRS} 
 )
 
 ## Declare a C++ library
@@ -154,14 +158,14 @@ include
 
 ## Specify libraries to link a library or executable target against
  target_link_libraries(multi_lidar_calibration
-   ${catkin_LIBRARIES} ${PCL_COMMON_LIBRARIES} ${PCL_IO_LIBRARIES} ${PCL_LIBRARIES}
+   ${catkin_LIBRARIES} ${PCL_COMMON_LIBRARIES} ${PCL_IO_LIBRARIES} ${PCL_LIBRARIES} ${csm_LIBRARIES}
  )
 
 add_executable(multi_lidar_calibration_node src/multi_lidar_calibration_node.cc)
 target_link_libraries(multi_lidar_calibration_node
 ${catkin_LIBRARIES} multi_lidar_calibration
 )
-add_dependencies(multi_lidar_calibration_node multi_lidar_calibration )
+add_dependencies(multi_lidar_calibration_node multi_lidar_calibration)
 
 #############
 ## Install ##

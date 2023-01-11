@@ -193,6 +193,79 @@ pcl::PointCloud<pcl::PointXYZ> MultiLidarCalibration::ConvertScantoPointCloud(
   return cloud_points;
 }
 
+void MultiLidarCalibration::LaserScanToLDP(
+    const sensor_msgs::LaserScan::ConstPtr &scan_msg, LDP &ldp) {
+  unsigned int n = scan_msg->ranges.size();
+  // 调用csm里的函数进行申请空间
+  if (ldp != nullptr) {
+    ROS_INFO("maybe memory bug");
+  }
+  ldp = ld_alloc_new(n);
+
+  for (unsigned int i = 0; i < n; i++) {
+    // calculate position in laser frame
+    double r = scan_msg->ranges[i];
+
+    if (r > scan_msg->range_min && r < scan_msg->range_max) {
+      // 填充雷达数据
+      ldp->valid[i] = 1;
+      ldp->readings[i] = r;
+    } else {
+      ldp->valid[i] = 0;
+      ldp->readings[i] = -1;  // for invalid range
+    }
+
+    ldp->theta[i] = scan_msg->angle_min + i * scan_msg->angle_increment;
+    ldp->cluster[i] = -1;
+  }
+
+  ldp->min_theta = ldp->theta[0];
+  ldp->max_theta = ldp->theta[n - 1];
+
+  ldp->odometry[0] = 0.0;
+  ldp->odometry[1] = 0.0;
+  ldp->odometry[2] = 0.0;
+
+  ldp->estimate[0] = 0.0;
+  ldp->estimate[1] = 0.0;
+  ldp->estimate[2] = 0.0;
+
+  ldp->true_pose[0] = 0.0;
+  ldp->true_pose[1] = 0.0;
+  ldp->true_pose[2] = 0.0;
+}
+
+void MultiLidarCalibration::PclToLDP(
+    const pcl::PointCloud<pcl::PointXYZ> &pcl_src, LDP &ldp) {
+  unsigned int n = pcl_src.size();
+  // 调用csm里的函数进行申请空间
+  ldp = ld_alloc_new(n);
+
+  for (unsigned int i = 0; i < n; i++) {
+    // 填充雷达数据
+    ldp->valid[i] = 1;
+    ldp->readings[i] = GetRange(pcl_src[i]);
+
+    ldp->theta[i] = GetTheta(pcl_src[i]);
+    ldp->cluster[i] = -1;
+  }
+
+  ldp->min_theta = ldp->theta[0];
+  ldp->max_theta = ldp->theta[n - 1];
+
+  ldp->odometry[0] = 0.0;
+  ldp->odometry[1] = 0.0;
+  ldp->odometry[2] = 0.0;
+
+  ldp->estimate[0] = 0.0;
+  ldp->estimate[1] = 0.0;
+  ldp->estimate[2] = 0.0;
+
+  ldp->true_pose[0] = 0.0;
+  ldp->true_pose[1] = 0.0;
+  ldp->true_pose[2] = 0.0;
+}
+
 /**
  * @brief 多个激光雷达数据同步
  *
@@ -204,16 +277,19 @@ void MultiLidarCalibration::ScanCallBack(
     const sensor_msgs::LaserScan::ConstPtr &in_sub_scan_msg) {
   main_scan_pointcloud_ =
       ConvertScantoPointCloud(in_main_scan_msg).makeShared();
-  sub_scan_pointcloud_ = ConvertScantoPointCloud(in_sub_scan_msg).makeShared();
+  if (sub_scan_ldp_ != nullptr) {
+    ld_free(sub_scan_ldp_);
+    sub_scan_ldp_ = nullptr;
+  }
+  LaserScanToLDP(in_sub_scan_msg, sub_scan_ldp_);
 }
 
 /**
- * @brief 两个激光雷达数据进行icp匹配
+ * @brief 两个激光雷达数据进行pl_icp匹配
  *
  */
 bool MultiLidarCalibration::ScanRegistration() {
-  if (0 == main_scan_pointcloud_->points.size() ||
-      0 == sub_scan_pointcloud_->points.size()) {
+  if (0 == main_scan_pointcloud_->points.size() || nullptr == sub_scan_ldp_) {
     return false;
   }
 
