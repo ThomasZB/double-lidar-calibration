@@ -53,7 +53,7 @@ MultiLidarCalibration::MultiLidarCalibration(ros::NodeHandle &n)
   // 在main_laser_link下sub_laser_link的坐标
   transform_martix_ = Eigen::Matrix4f::Identity();  // 4 * 4 齐次坐标
   // 在base_link坐标系下main_laser_link的坐标
-  front_to_base_link_ = Eigen::Matrix4f::Identity();
+  sub_to_base_link_ = Eigen::Matrix4f::Identity();
 
   // 点云指针赋值
   main_scan_pointcloud_ = boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>(
@@ -75,7 +75,7 @@ MultiLidarCalibration::~MultiLidarCalibration() {}
  * @brief 获取激光雷达间的坐标变换
  *
  * @param transform_martix_ 激光雷达间的转换矩阵
- * @param front_to_base_link_ 在main_laser_link下sub_laser_link的坐标
+ * @param sub_to_base_link_ 在base_link下sub_laser_link的坐标
  */
 void MultiLidarCalibration::GetFrontLasertoBackLaserTf() {
   tf2_ros::Buffer buffer;
@@ -111,7 +111,7 @@ void MultiLidarCalibration::GetFrontLasertoBackLaserTf() {
 
   /* 得到source到base_link的坐标变换 */
   try {
-    tfGeom = buffer.lookupTransform("base_link", source_lidar_frame_str_,
+    tfGeom = buffer.lookupTransform("base_link", target_lidar_frame_str_,
                                     ros::Time(0), ros::Duration(3.0));
   } catch (tf2::TransformException &e) {
     ROS_ERROR_STREAM("Lidar Transform Error ...");
@@ -125,12 +125,12 @@ void MultiLidarCalibration::GetFrontLasertoBackLaserTf() {
     Eigen::Vector3f qt(tfGeom.transform.translation.x,
                        tfGeom.transform.translation.y,
                        tfGeom.transform.translation.z);  // tf获得的平移向量
-    front_to_base_link_.block<3, 3>(0, 0) = qw.toRotationMatrix();
-    front_to_base_link_.block<3, 1>(0, 3) = qt;
+    sub_to_base_link_.block<3, 3>(0, 0) = qw.toRotationMatrix();
+    sub_to_base_link_.block<3, 1>(0, 3) = qt;
   }
 
-  ROS_INFO_STREAM("main_laser_link in base_link matrix=\n"
-                  << front_to_base_link_);
+  ROS_INFO_STREAM("sub laser in base_link matrix=\n"
+                  << sub_to_base_link_);
 }
 
 /**
@@ -257,13 +257,8 @@ void MultiLidarCalibration::GetResult() {
   T = icp_.getFinalTransformation();
   Eigen::Matrix3f R3 = T.block<3, 3>(0, 0);
   Eigen::Vector3f t3 = T.block<3, 1>(0, 3);
-  /* 将这个结果叠加到对应的tf上去（这样两个雷达的相对变换才是正确的） */
-  // Eigen::Matrix4f new_T = T * transform_martix_;
 
-  /* 知道main激光和base_link的坐标变换，知道main激光和sub激光的坐标变换，可以求出sub和baselink
-   */
-  // Eigen::Matrix4f O_B_T = front_to_base_link_ * new_T;
-  Eigen::Matrix4f O_B_T = front_to_base_link_ * transform_martix_ * T;
+  Eigen::Matrix4f O_B_T = sub_to_base_link_ * T;
   Eigen::Vector3f transform = O_B_T.block<3, 1>(0, 3);
   Eigen::Vector3f eulerAngle = O_B_T.block<3, 3>(0, 0).eulerAngles(0, 1, 2);
 
