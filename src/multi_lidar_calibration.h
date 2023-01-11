@@ -113,7 +113,7 @@ class MultiLidarCalibration {
   pcl::PointCloud<pcl::PointXYZ>::Ptr sub_scan_pointcloud_;
   LDP sub_scan_ldp_ = nullptr;
   // 通过tf2转换后的待标定的激光数据
-  pcl::PointCloud<pcl::PointXYZ>::Ptr sub_scan_pointcloud_init_transformed_;
+  pcl::PointCloud<pcl::PointXYZ>::Ptr main_scan_pointcloud_init_transformed_;
 
   /**
    * @brief icp

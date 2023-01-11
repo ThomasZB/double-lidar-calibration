@@ -63,7 +63,7 @@ MultiLidarCalibration::MultiLidarCalibration(ros::NodeHandle &n)
   final_registration_scan_ = boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>(
       new pcl::PointCloud<pcl::PointXYZ>());
   // 使用在main_laser_link下sub_laser_link的坐标，把sub_laser_link下的激光转换到main_laser_link下
-  sub_scan_pointcloud_init_transformed_ =
+  main_scan_pointcloud_init_transformed_ =
       boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>(
           new pcl::PointCloud<pcl::PointXYZ>());
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>();
@@ -294,8 +294,8 @@ bool MultiLidarCalibration::ScanRegistration() {
   }
 
   // 对点云进行初始化旋转，back_link to front_link
-  pcl::transformPointCloud(*sub_scan_pointcloud_,
-                           *sub_scan_pointcloud_init_transformed_,
+  pcl::transformPointCloud(*main_scan_pointcloud_,
+                           *main_scan_pointcloud_init_transformed_,
                            transform_martix_);
 
   // 最大欧式距离差值
@@ -307,8 +307,8 @@ bool MultiLidarCalibration::ScanRegistration() {
   // 最多迭代次数
   icp_.setMaximumIterations(200);
 
-  icp_.setInputSource(sub_scan_pointcloud_init_transformed_);
-  icp_.setInputTarget(main_scan_pointcloud_);
+  icp_.setInputSource(sub_scan_pointcloud_);
+  icp_.setInputTarget(main_scan_pointcloud_init_transformed_);
 
   icp_.align(*final_registration_scan_);
 
@@ -334,11 +334,12 @@ void MultiLidarCalibration::GetResult() {
   Eigen::Matrix3f R3 = T.block<3, 3>(0, 0);
   Eigen::Vector3f t3 = T.block<3, 1>(0, 3);
   /* 将这个结果叠加到对应的tf上去（这样两个雷达的相对变换才是正确的） */
-  Eigen::Matrix4f new_T = T * transform_martix_;
+  // Eigen::Matrix4f new_T = T * transform_martix_;
 
   /* 知道main激光和base_link的坐标变换，知道main激光和sub激光的坐标变换，可以求出sub和baselink
    */
-  Eigen::Matrix4f O_B_T = front_to_base_link_ * new_T;
+  // Eigen::Matrix4f O_B_T = front_to_base_link_ * new_T;
+  Eigen::Matrix4f O_B_T = front_to_base_link_ * transform_martix_ * T;
   Eigen::Vector3f transform = O_B_T.block<3, 1>(0, 3);
   Eigen::Vector3f eulerAngle = O_B_T.block<3, 3>(0, 0).eulerAngles(0, 1, 2);
 
