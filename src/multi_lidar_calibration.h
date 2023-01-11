@@ -94,7 +94,7 @@ class MultiLidarCalibration {
   // 两个激光间的transfrom，通过tf2获得
   Eigen::Matrix4f transform_martix_;
   // 主激光到base_link的TF
-  Eigen::Matrix4f front_to_base_link_;
+  Eigen::Matrix4f sub_to_base_link_;
 
   ros::NodeHandle nh_;
   // 纠正激光输出，类型pointcloud2
