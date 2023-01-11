@@ -64,14 +64,11 @@ class MultiLidarCalibration {
   void PublishCloud(
       pcl::PointCloud<pcl::PointXYZ>::Ptr &in_cloud_to_publish_ptr);
 
-  // 对main雷达和sub雷达的激光点云进行icp匹配
+  // 对main雷达和sub雷达的激光点云进行pl-icp匹配
   bool ScanRegistration();
 
   // 发布标定结果
   void GetResult();
-
-  // 可视化
-  void View();
 
   inline float GetRange(const pcl::PointXYZ &point) {
     return sqrt(point.x * point.x + point.y * point.y);
@@ -79,6 +76,7 @@ class MultiLidarCalibration {
   inline float GetTheta(const pcl::PointXYZ &point) {
     return atan2(point.y, point.x);
   }
+
   // 订阅的激光话题
   std::string source_lidar_topic_str_;
   std::string target_lidar_topic_str_;
@@ -96,6 +94,7 @@ class MultiLidarCalibration {
 
   // 第一次运行时进行矩阵赋值
   bool is_first_run_;
+  bool is_reading_range_init_ = false;
 
   // 两个激光间的transfrom，通过tf2获得
   Eigen::Matrix4f transform_martix_;
@@ -104,6 +103,7 @@ class MultiLidarCalibration {
 
   ros::NodeHandle nh_;
   // 纠正激光输出，类型pointcloud2
+  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
   ros::Publisher final_point_cloud_pub_;
   // 进行激光时间同步和数据缓存
   typedef message_filters::sync_policies::ApproximateTime<
@@ -113,27 +113,22 @@ class MultiLidarCalibration {
       *scan_back_subscriber_;
   message_filters::Synchronizer<SyncPolicyT> *scan_synchronizer_;
 
+  LDP sub_scan_ldp_ = nullptr;
   // pcl格式的激光数据
   pcl::PointCloud<pcl::PointXYZ>::Ptr main_scan_pointcloud_;
   // 标定雷达数据
   pcl::PointCloud<pcl::PointXYZ>::Ptr sub_scan_pointcloud_;
-  LDP sub_scan_ldp_ = nullptr;
   // 通过tf2转换后的待标定的激光数据
   pcl::PointCloud<pcl::PointXYZ>::Ptr main_scan_pointcloud_init_transformed_;
 
-  /**
-   * @brief icp
-   * @param final_registration_scan_
-   * 通过icp处理把待标定数据，转换到目标坐标系下的激光点云数据
-   */
-  pcl::IterativeClosestPoint<pcl::PointXYZ, pcl::PointXYZ> icp_;
-  pcl::PointCloud<pcl::PointXYZ>::Ptr final_registration_scan_;
-
+  /* 用于指数平均 */
   const double time_constant_;
   ros::Time last_linear_acceleration_time_;
   Eigen::Vector3f laset_eulerAngle_;
   Eigen::Vector3f last_transform_;
-  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+
+  /* 记录上一次的预测值 */
+  float last_result_[3] = {0};
 };
 
 #endif  // MULTI_LIDAR_CALIBRATION_H_

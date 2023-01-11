@@ -60,8 +60,6 @@ MultiLidarCalibration::MultiLidarCalibration(ros::NodeHandle &n)
       new pcl::PointCloud<pcl::PointXYZ>());
   sub_scan_pointcloud_ = boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>(
       new pcl::PointCloud<pcl::PointXYZ>());
-  final_registration_scan_ = boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>(
-      new pcl::PointCloud<pcl::PointXYZ>());
   // 使用在main_laser_link下sub_laser_link的坐标，把sub_laser_link下的激光转换到main_laser_link下
   main_scan_pointcloud_init_transformed_ =
       boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>(
@@ -76,7 +74,7 @@ void MultiLidarCalibration::InitParams() {
   // Maximum angular displacement between scans
   if (!nh_.getParam("max_angular_correction_deg",
                     input_.max_angular_correction_deg))
-    input_.max_angular_correction_deg = 180;
+    input_.max_angular_correction_deg = 45;
 
   // Maximum translation between scans (m)
   if (!nh_.getParam("max_linear_correction", input_.max_linear_correction))
@@ -99,7 +97,7 @@ void MultiLidarCalibration::InitParams() {
     input_.max_correspondence_dist = 1.0;
 
   // Noise in the scan (m)
-  if (!nh_.getParam("sigma", input_.sigma)) input_.sigma = 0.10;
+  if (!nh_.getParam("sigma", input_.sigma)) input_.sigma = 0.010;
 
   // Use smart tricks for finding correspondences.
   if (!nh_.getParam("use_corr_tricks", input_.use_corr_tricks))
@@ -206,7 +204,6 @@ MultiLidarCalibration::~MultiLidarCalibration() {}
 void MultiLidarCalibration::GetFrontLasertoBackLaserTf() {
   tf2_ros::Buffer buffer;
   tf2_ros::TransformListener tfl(buffer);
-
   ros::Time time = ros::Time::now();
   ros::Duration timeout(0.1);
 
@@ -215,7 +212,7 @@ void MultiLidarCalibration::GetFrontLasertoBackLaserTf() {
   /* 得到source到target雷达的坐标变换 */
   try {
     tfGeom =
-        buffer.lookupTransform(source_lidar_frame_str_, target_lidar_frame_str_,
+        buffer.lookupTransform(target_lidar_frame_str_, source_lidar_frame_str_,
                                ros::Time(0), ros::Duration(3.0));
   } catch (tf2::TransformException &e) {
     ROS_ERROR_STREAM("Lidar Transform Error ... s:" << source_lidar_frame_str_
@@ -255,7 +252,7 @@ void MultiLidarCalibration::GetFrontLasertoBackLaserTf() {
     sub_to_base_link_.block<3, 1>(0, 3) = qt;
   }
 
-  ROS_INFO_STREAM("sub laser in base_link matrix=\n" << sub_to_base_link_);
+  ROS_INFO_STREAM("sub_laser in base_link matrix=\n" << sub_to_base_link_);
 }
 
 /**
@@ -415,6 +412,12 @@ void MultiLidarCalibration::ScanCallBack(
     sub_scan_ldp_ = nullptr;
   }
   LaserScanToLDP(in_sub_scan_msg, sub_scan_ldp_);
+  if (!is_reading_range_init_) {
+    is_reading_range_init_ = true;
+    /* 这个非常关键 */
+    input_.min_reading = in_main_scan_msg->range_min;
+    input_.max_reading = in_main_scan_msg->range_max;
+  }
 }
 
 /**
@@ -437,18 +440,20 @@ bool MultiLidarCalibration::ScanRegistration() {
   input_.laser_ref = main_scan_ldp;
   input_.laser_sens = sub_scan_ldp_;
 
-  // 位姿的预测值为0，就是不进行预测
-  input_.first_guess[0] = 0;
-  input_.first_guess[1] = 0;
-  input_.first_guess[2] = 0;
+  /* 用上一次算的位姿作为预测位姿 */
+  input_.first_guess[0] = last_result_[0];
+  input_.first_guess[1] = last_result_[1];
+  input_.first_guess[2] = last_result_[2];
 
   // 调用csm里的函数进行plicp计算帧间的匹配，输出结果保存在output里
-  ROS_INFO("begin pl-icp");
   sm_icp(&input_, &output_);
 
   if (output_.valid) {
     std::cout << "transfrom: (" << output_.x[0] << ", " << output_.x[1] << ", "
               << output_.x[2] * 180 / M_PI << ")" << std::endl;
+    last_result_[0] = input_.first_guess[0];
+    last_result_[1] = input_.first_guess[1];
+    last_result_[2] = input_.first_guess[2];
   } else {
     ROS_INFO("error~~~");
   }
@@ -462,6 +467,9 @@ bool MultiLidarCalibration::ScanRegistration() {
  *
  */
 void MultiLidarCalibration::GetResult() {
+  if (!output_.valid) {
+    return;
+  }
   // sub激光雷达到main雷达的icp的计算结果（这个结果是差值）
   Eigen::AngleAxisf rotation_vecotr(output_.x[2], Eigen::Vector3f(0, 0, 1));
   Eigen::Matrix4f T = Eigen::Matrix4f::Identity();
@@ -479,52 +487,32 @@ void MultiLidarCalibration::GetResult() {
                              ? duration.toSec()
                              : std::numeric_limits<double>::infinity();
   const double alpha = 1. - std::exp(-delta_t / time_constant_);
-  laset_eulerAngle_ = (1. - alpha) * laset_eulerAngle_ + alpha * eulerAngle;
+
+  /* 对欧拉角的指数平均做特殊处理 */
+  if (laset_eulerAngle_ != Eigen::Vector3f::Identity()) {
+    if (laset_eulerAngle_[3] > 3 && eulerAngle[3] < 3) {
+      eulerAngle[3] += 2 * 3.14;
+      last_transform_ = (1. - alpha) * last_transform_ + alpha * transform;
+      if (last_transform_[3] > 3.14) {
+        last_transform_[3] = last_transform_[3] - 2 * 3.14;
+      }
+    } else if (laset_eulerAngle_[3] < 3 && eulerAngle[3] > 3) {
+      eulerAngle[3] -= 2 * 3.14;
+      last_transform_ = (1. - alpha) * last_transform_ + alpha * transform;
+      if (last_transform_[3] < 3.14) {
+        last_transform_[3] = last_transform_[3] + 2 * 3.14;
+      }
+    } else {
+      laset_eulerAngle_ = (1. - alpha) * laset_eulerAngle_ + alpha * eulerAngle;
+    }
+  } else {
+    laset_eulerAngle_ = (1. - alpha) * laset_eulerAngle_ + alpha * eulerAngle;
+  }
   last_transform_ = (1. - alpha) * last_transform_ + alpha * transform;
 
   // 输出转换关系
   ROS_INFO_STREAM("eulerAngle=\n" << laset_eulerAngle_);
   ROS_INFO_STREAM("transform vector=\n" << last_transform_);
-}
-
-/**
- * @brief  点云可视化
- *
- */
-void MultiLidarCalibration::View() {
-  // 点云可视化
-  boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer(
-      new pcl::visualization::PCLVisualizer("3D Viewer"));
-  viewer->setBackgroundColor(0, 0, 0);  // 背景色设置
-
-  // 显示源点云
-  pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> source_color(
-      main_scan_pointcloud_, 0, 255, 0);
-  viewer->addPointCloud<pcl::PointXYZ>(main_scan_pointcloud_, source_color,
-                                       "source");
-  viewer->setPointCloudRenderingProperties(
-      pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "source");
-
-  // 显示目标点云
-  pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ> target_color(
-      sub_scan_pointcloud_, 255, 0, 255);
-  viewer->addPointCloud<pcl::PointXYZ>(sub_scan_pointcloud_, target_color,
-                                       "target");
-  viewer->setPointCloudRenderingProperties(
-      pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "target");
-
-  // 显示变换后的源点云
-  pcl::visualization::PointCloudColorHandlerCustom<pcl::PointXYZ>
-      source_trans_color(final_registration_scan_, 255, 255, 255);
-  viewer->addPointCloud<pcl::PointXYZ>(final_registration_scan_,
-                                       source_trans_color, "source trans");
-  viewer->setPointCloudRenderingProperties(
-      pcl::visualization::PCL_VISUALIZER_POINT_SIZE, 2, "source trans");
-
-  // 保存变换结果
-  pcl::io::savePLYFile("final_registration_scan.pcd", *final_registration_scan_,
-                       false);
-  viewer->spin();
 }
 
 /**
