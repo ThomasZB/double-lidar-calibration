@@ -9,6 +9,8 @@
 #define MULTI_LIDAR_CALIBRATION_H_
 
 #include <csm/csm_all.h>
+#undef max
+#undef min
 #include <geometry_msgs/Transform.h>
 #include <geometry_msgs/TransformStamped.h>
 #include <geometry_msgs/TwistStamped.h>
@@ -44,6 +46,7 @@ class MultiLidarCalibration {
  private:
   // 两个激光坐标系间初始坐标变换
   void GetFrontLasertoBackLaserTf();
+  void InitParams();
 
   // 订阅main雷达和sub雷达两个激光数据
   void ScanCallBack(const sensor_msgs::LaserScan::ConstPtr &in_main_scan_msg,
@@ -84,6 +87,9 @@ class MultiLidarCalibration {
   std::string source_lidar_frame_str_;
   std::string target_lidar_frame_str_;
   std::string pointcloud_frame_str_;
+
+  sm_params input_;
+  sm_result output_;
 
   // icp匹配得分
   float icp_score_;

@@ -67,6 +67,132 @@ MultiLidarCalibration::MultiLidarCalibration(ros::NodeHandle &n)
       boost::shared_ptr<pcl::PointCloud<pcl::PointXYZ>>(
           new pcl::PointCloud<pcl::PointXYZ>());
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>();
+  InitParams();
+}
+
+void MultiLidarCalibration::InitParams() {
+  // **** CSM 的参数 - comments copied from algos.h (by Andrea Censi)
+
+  // Maximum angular displacement between scans
+  if (!nh_.getParam("max_angular_correction_deg",
+                    input_.max_angular_correction_deg))
+    input_.max_angular_correction_deg = 180;
+
+  // Maximum translation between scans (m)
+  if (!nh_.getParam("max_linear_correction", input_.max_linear_correction))
+    input_.max_linear_correction = 1.0;
+
+  // Maximum ICP cycle iterations
+  if (!nh_.getParam("max_iterations", input_.max_iterations))
+    input_.max_iterations = 100;
+
+  // A threshold for stopping (m)
+  if (!nh_.getParam("epsilon_xy", input_.epsilon_xy))
+    input_.epsilon_xy = 0.000001;
+
+  // A threshold for stopping (rad)
+  if (!nh_.getParam("epsilon_theta", input_.epsilon_theta))
+    input_.epsilon_theta = 0.000001;
+
+  // Maximum distance for a correspondence to be valid
+  if (!nh_.getParam("max_correspondence_dist", input_.max_correspondence_dist))
+    input_.max_correspondence_dist = 1.0;
+
+  // Noise in the scan (m)
+  if (!nh_.getParam("sigma", input_.sigma)) input_.sigma = 0.10;
+
+  // Use smart tricks for finding correspondences.
+  if (!nh_.getParam("use_corr_tricks", input_.use_corr_tricks))
+    input_.use_corr_tricks = 1;
+
+  // Restart: Restart if error is over threshold
+  if (!nh_.getParam("restart", input_.restart)) input_.restart = 0;
+
+  // Restart: Threshold for restarting
+  if (!nh_.getParam("restart_threshold_mean_error",
+                    input_.restart_threshold_mean_error))
+    input_.restart_threshold_mean_error = 0.01;
+
+  // Restart: displacement for restarting. (m)
+  if (!nh_.getParam("restart_dt", input_.restart_dt)) input_.restart_dt = 1.0;
+
+  // Restart: displacement for restarting. (rad)
+  if (!nh_.getParam("restart_dtheta", input_.restart_dtheta))
+    input_.restart_dtheta = 0.1;
+
+  // Max distance for staying in the same clustering
+  if (!nh_.getParam("clustering_threshold", input_.clustering_threshold))
+    input_.clustering_threshold = 0.25;
+
+  // Number of neighbour rays used to estimate the orientation
+  if (!nh_.getParam("orientation_neighbourhood",
+                    input_.orientation_neighbourhood))
+    input_.orientation_neighbourhood = 20;
+
+  // If 0, it's vanilla ICP
+  if (!nh_.getParam("use_point_to_line_distance",
+                    input_.use_point_to_line_distance))
+    input_.use_point_to_line_distance = 1;
+
+  // Discard correspondences based on the angles
+  if (!nh_.getParam("do_alpha_test", input_.do_alpha_test))
+    input_.do_alpha_test = 0;
+
+  // Discard correspondences based on the angles - threshold angle, in degrees
+  if (!nh_.getParam("do_alpha_test_thresholdDeg",
+                    input_.do_alpha_test_thresholdDeg))
+    input_.do_alpha_test_thresholdDeg = 20.0;
+
+  // Percentage of correspondences to consider: if 0.9,
+  // always discard the top 10% of correspondences with more error
+  if (!nh_.getParam("outliers_maxPerc", input_.outliers_maxPerc))
+    input_.outliers_maxPerc = 0.90;
+
+  // Parameters describing a simple adaptive algorithm for discarding.
+  //  1) Order the errors.
+  //  2) Choose the percentile according to outliers_adaptive_order.
+  //     (if it is 0.7, get the 70% percentile)
+  //  3) Define an adaptive threshold multiplying outliers_adaptive_mult
+  //     with the value of the error at the chosen percentile.
+  //  4) Discard correspondences over the threshold.
+  //  This is useful to be conservative; yet remove the biggest errors.
+  if (!nh_.getParam("outliers_adaptive_order", input_.outliers_adaptive_order))
+    input_.outliers_adaptive_order = 0.7;
+
+  if (!nh_.getParam("outliers_adaptive_mult", input_.outliers_adaptive_mult))
+    input_.outliers_adaptive_mult = 2.0;
+
+  // If you already have a guess of the solution, you can compute the polar
+  // angle of the points of one scan in the new position. If the polar angle is
+  // not a monotone function of the readings index, it means that the surface is
+  // not visible in the next position. If it is not visible, then we don't use
+  // it for matching.
+  if (!nh_.getParam("do_visibility_test", input_.do_visibility_test))
+    input_.do_visibility_test = 0;
+
+  // no two points in laser_sens can have the same corr.
+  if (!nh_.getParam("outliers_remove_doubles", input_.outliers_remove_doubles))
+    input_.outliers_remove_doubles = 1;
+
+  // If 1, computes the covariance of ICP using the method
+  // http://purl.org/censi/2006/icpcov
+  if (!nh_.getParam("do_compute_covariance", input_.do_compute_covariance))
+    input_.do_compute_covariance = 0;
+
+  // Checks that find_correspondences_tricks gives the right answer
+  if (!nh_.getParam("debug_verify_tricks", input_.debug_verify_tricks))
+    input_.debug_verify_tricks = 0;
+
+  // If 1, the field 'true_alpha' (or 'alpha') in the first scan is used to
+  // compute the incidence beta, and the factor (1/cos^2(beta)) used to weight
+  // the correspondence.");
+  if (!nh_.getParam("use_ml_weights", input_.use_ml_weights))
+    input_.use_ml_weights = 0;
+
+  // If 1, the field 'readings_sigma' in the second scan is used to weight the
+  // correspondence by 1/sigma^2
+  if (!nh_.getParam("use_sigma_weights", input_.use_sigma_weights))
+    input_.use_sigma_weights = 0;
 }
 
 MultiLidarCalibration::~MultiLidarCalibration() {}
@@ -129,8 +255,7 @@ void MultiLidarCalibration::GetFrontLasertoBackLaserTf() {
     sub_to_base_link_.block<3, 1>(0, 3) = qt;
   }
 
-  ROS_INFO_STREAM("sub laser in base_link matrix=\n"
-                  << sub_to_base_link_);
+  ROS_INFO_STREAM("sub laser in base_link matrix=\n" << sub_to_base_link_);
 }
 
 /**
@@ -238,16 +363,23 @@ void MultiLidarCalibration::LaserScanToLDP(
 void MultiLidarCalibration::PclToLDP(
     const pcl::PointCloud<pcl::PointXYZ> &pcl_src, LDP &ldp) {
   unsigned int n = pcl_src.size();
+  std::map<float, float> laser_scan;
   // 调用csm里的函数进行申请空间
   ldp = ld_alloc_new(n);
 
+  /* 对激光按theta排序 */
   for (unsigned int i = 0; i < n; i++) {
+    laser_scan.emplace(GetTheta(pcl_src[i]), GetRange(pcl_src[i]));
+  }
+  int i = 0;
+  for (const auto &each_ray : laser_scan) {
     // 填充雷达数据
     ldp->valid[i] = 1;
-    ldp->readings[i] = GetRange(pcl_src[i]);
+    ldp->readings[i] = each_ray.second;
 
-    ldp->theta[i] = GetTheta(pcl_src[i]);
+    ldp->theta[i] = each_ray.first;
     ldp->cluster[i] = -1;
+    i++;
   }
 
   ldp->min_theta = ldp->theta[0];
@@ -277,6 +409,7 @@ void MultiLidarCalibration::ScanCallBack(
     const sensor_msgs::LaserScan::ConstPtr &in_sub_scan_msg) {
   main_scan_pointcloud_ =
       ConvertScantoPointCloud(in_main_scan_msg).makeShared();
+  sub_scan_pointcloud_ = ConvertScantoPointCloud(in_sub_scan_msg).makeShared();
   if (sub_scan_ldp_ != nullptr) {
     ld_free(sub_scan_ldp_);
     sub_scan_ldp_ = nullptr;
@@ -298,24 +431,29 @@ bool MultiLidarCalibration::ScanRegistration() {
                            *main_scan_pointcloud_init_transformed_,
                            transform_martix_);
 
-  // 最大欧式距离差值
-  icp_.setMaxCorrespondenceDistance(0.2);
-  // 迭代阈值，当前变换矩阵和当前迭代矩阵差异小于阈值，认为收敛
-  icp_.setTransformationEpsilon(1e-10);
-  // 均方误差和小于阈值停止迭代
-  icp_.setEuclideanFitnessEpsilon(0.01);
-  // 最多迭代次数
-  icp_.setMaximumIterations(200);
+  LDP main_scan_ldp;
+  PclToLDP(*main_scan_pointcloud_init_transformed_, main_scan_ldp);
 
-  icp_.setInputSource(sub_scan_pointcloud_);
-  icp_.setInputTarget(main_scan_pointcloud_init_transformed_);
+  input_.laser_ref = main_scan_ldp;
+  input_.laser_sens = sub_scan_ldp_;
 
-  icp_.align(*final_registration_scan_);
+  // 位姿的预测值为0，就是不进行预测
+  input_.first_guess[0] = 0;
+  input_.first_guess[1] = 0;
+  input_.first_guess[2] = 0;
 
-  if (icp_.hasConverged() == false && icp_.getFitnessScore() > 1.0) {
-    ROS_WARN_STREAM("Not Converged ... ");
-    return false;
+  // 调用csm里的函数进行plicp计算帧间的匹配，输出结果保存在output里
+  ROS_INFO("begin pl-icp");
+  sm_icp(&input_, &output_);
+
+  if (output_.valid) {
+    std::cout << "transfrom: (" << output_.x[0] << ", " << output_.x[1] << ", "
+              << output_.x[2] * 180 / M_PI << ")" << std::endl;
+  } else {
+    ROS_INFO("error~~~");
   }
+  ld_free(main_scan_ldp);
+
   return true;
 }
 
@@ -324,15 +462,11 @@ bool MultiLidarCalibration::ScanRegistration() {
  *
  */
 void MultiLidarCalibration::GetResult() {
-  if (icp_.getFitnessScore() > icp_score_) {
-    return;
-  }
-
   // sub激光雷达到main雷达的icp的计算结果（这个结果是差值）
+  Eigen::AngleAxisf rotation_vecotr(output_.x[2], Eigen::Vector3f(0, 0, 1));
   Eigen::Matrix4f T = Eigen::Matrix4f::Identity();
-  T = icp_.getFinalTransformation();
-  Eigen::Matrix3f R3 = T.block<3, 3>(0, 0);
-  Eigen::Vector3f t3 = T.block<3, 1>(0, 3);
+  T.block<3, 3>(0, 0) = rotation_vecotr.toRotationMatrix();
+  T.block<3, 1>(0, 3) = Eigen::Vector3f(output_.x[0], output_.x[1], 0);
 
   Eigen::Matrix4f O_B_T = sub_to_base_link_ * T;
   Eigen::Vector3f transform = O_B_T.block<3, 1>(0, 3);

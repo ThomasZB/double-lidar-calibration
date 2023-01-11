@@ -163,9 +163,9 @@ include
 
 add_executable(multi_lidar_calibration_node src/multi_lidar_calibration_node.cc)
 target_link_libraries(multi_lidar_calibration_node
-${catkin_LIBRARIES} multi_lidar_calibration
+${catkin_LIBRARIES} multi_lidar_calibration ${catkin_LIBRARIES} 
 )
-add_dependencies(multi_lidar_calibration_node multi_lidar_calibration)
+add_dependencies(multi_lidar_calibration_node multi_lidar_calibration ${csm_EXPORTED_TARGETS} )
 
 #############
 ## Install ##
