@@ -4,9 +4,9 @@
   <br>
   <br>
 </h1>
+## 说明
 
-两个雷达间的标定
-![image](https://github.com/liuzm-slam/multi_lidar_calibration/blob/master/img/display.gif)
+本项目fork自[liuzm-slam/multi_lidar_calibration: two single-line lasers use icp to calibrate the relative position relationship (github.com)](https://github.com/liuzm-slam/multi_lidar_calibration)，在此基础上做了一些修改，包括：修改了标定逻辑，更换为pl-icp，添加时间平均等。感谢liuzm-slam的开源。
 
 ## 使用
 
@@ -22,11 +22,6 @@
 $$^O_BT\times T_e$$
 
 原理为自己的理解，如有错误请见谅。
-
-## 修改
-
-目前将ICP匹配更改为了PLICP，精度更高。
-1. 修改了标定逻辑：假设第一个雷达位姿是绝对准确的，调整第二颗雷达让两颗雷达点云重合
 
 ## 缺点
 1. 出来的位姿只有两颗雷达的相对位姿是准确的，两颗雷达的实际位姿（和base_link间的）并没有标定

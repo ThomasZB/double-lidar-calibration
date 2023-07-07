@@ -1,4 +1,8 @@
 cmake_minimum_required(VERSION 3.0.2)
+
+set(CMAKE_CXX_FLAGS_DEBUG "$ENV{CXXFLAGS} -O0 -Wall -g -ggdb")
+set(CMAKE_CXX_FLAGS_RELEASE "$ENV{CXXFLAGS} -O3 -Wall")
+
 project(multi_lidar_calibration)
 set(CMAKE_CXX_STANDARD 14) 
 ## Compile as C++11, supported in ROS Kinetic and newer

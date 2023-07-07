@@ -1,13 +1,13 @@
 <launch>
   <param name="/use_sim_time" value="true" />
 
-  <arg name="bag_filename" default="/home/thomas/Documents/Slam_data/testroom/new_lidar/bddoubletestM.bag" />
+  <arg name="bag_filename" default="/home/choffice/Documents/slam_bag/biaoding/leftscanbd.bag" />
   
   <!-- 发布tf -->
   <!-- <node pkg="tf" type="static_transform_publisher" name="link1" args="0.37 0.25 0.35 0 0.0 0.0 base_link laser1 100" />
   <node pkg="tf" type="static_transform_publisher" name="link2" args="-0.37 -0.25 0.35 3.14 0.0 0.0  base_link laser2 100" /> -->
-  <node pkg="tf" type="static_transform_publisher" name="link1" args="0.269 0.179 0.35 0 0.0 0.0 base_link laser 100" />
-  <node pkg="tf" type="static_transform_publisher" name="link2" args="-0.209732 -0.199455 0.35 -3.12945 0.0 0.0  base_link laserB 100" />
+  <node pkg="tf" type="static_transform_publisher" name="link1" args="1.369 0.055 0 0.002 0.0 0.0 base_link laser 100" />
+  <node pkg="tf" type="static_transform_publisher" name="link2" args="1.3 0.3 0 3.14 0.0 0.0  base_link laser_left_link 100" />
 
   <node pkg="multi_lidar_calibration" type="multi_lidar_calibration_node" name="multi_lidar_calibration_node" output="screen">
     <rosparam file="$(find multi_lidar_calibration)/config/params.yaml" command="load"/>

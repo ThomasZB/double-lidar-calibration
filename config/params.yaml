@@ -1,8 +1,7 @@
 # 由source 指向 target
 source_lidar_topic: /scan
-target_lidar_topic: /scanB
+target_lidar_topic: /left_scan
 
 source_lidar_frame: laser
-target_lidar_frame: laserB
+target_lidar_frame: laser_left_link
 
-icp_score: 5.386

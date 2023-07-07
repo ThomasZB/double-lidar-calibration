@@ -74,11 +74,11 @@ void MultiLidarCalibration::InitParams() {
   // Maximum angular displacement between scans
   if (!nh_.getParam("max_angular_correction_deg",
                     input_.max_angular_correction_deg))
-    input_.max_angular_correction_deg = 45;
+    input_.max_angular_correction_deg = 10;
 
   // Maximum translation between scans (m)
   if (!nh_.getParam("max_linear_correction", input_.max_linear_correction))
-    input_.max_linear_correction = 1.0;
+    input_.max_linear_correction = 0.5;
 
   // Maximum ICP cycle iterations
   if (!nh_.getParam("max_iterations", input_.max_iterations))
@@ -328,7 +328,7 @@ void MultiLidarCalibration::LaserScanToLDP(
     // calculate position in laser frame
     double r = scan_msg->ranges[i];
 
-    if (r > scan_msg->range_min && r < scan_msg->range_max) {
+    if (r > 0.1 && r < 30.0) {
       // 填充雷达数据
       ldp->valid[i] = 1;
       ldp->readings[i] = r;
@@ -447,18 +447,18 @@ bool MultiLidarCalibration::ScanRegistration() {
 
   // 调用csm里的函数进行plicp计算帧间的匹配，输出结果保存在output里
   sm_icp(&input_, &output_);
+  ld_free(main_scan_ldp);
 
   if (output_.valid) {
     std::cout << "transfrom: (" << output_.x[0] << ", " << output_.x[1] << ", "
               << output_.x[2] * 180 / M_PI << ")" << std::endl;
-    last_result_[0] = input_.first_guess[0];
-    last_result_[1] = input_.first_guess[1];
-    last_result_[2] = input_.first_guess[2];
+    last_result_[0] = output_.x[0];
+    last_result_[1] = output_.x[1];
+    last_result_[2] = output_.x[2];
   } else {
     ROS_INFO("error~~~");
+    return false;
   }
-  ld_free(main_scan_ldp);
-
   return true;
 }
 
@@ -490,17 +490,17 @@ void MultiLidarCalibration::GetResult() {
 
   /* 对欧拉角的指数平均做特殊处理 */
   if (laset_eulerAngle_ != Eigen::Vector3f::Identity()) {
-    if (laset_eulerAngle_[3] > 3 && eulerAngle[3] < 3) {
-      eulerAngle[3] += 2 * 3.14;
-      last_transform_ = (1. - alpha) * last_transform_ + alpha * transform;
-      if (last_transform_[3] > 3.14) {
-        last_transform_[3] = last_transform_[3] - 2 * 3.14;
+    if (laset_eulerAngle_[2] > 3 && eulerAngle[2] < -3) {
+      eulerAngle[2] += 2 * M_PI;
+      laset_eulerAngle_ = (1. - alpha) * laset_eulerAngle_ + alpha * eulerAngle;
+      if (laset_eulerAngle_[2] > M_PI) {
+        laset_eulerAngle_[2] = laset_eulerAngle_[2] - 2 * M_PI;
       }
-    } else if (laset_eulerAngle_[3] < 3 && eulerAngle[3] > 3) {
-      eulerAngle[3] -= 2 * 3.14;
-      last_transform_ = (1. - alpha) * last_transform_ + alpha * transform;
-      if (last_transform_[3] < 3.14) {
-        last_transform_[3] = last_transform_[3] + 2 * 3.14;
+    } else if (laset_eulerAngle_[2] < -3 && eulerAngle[2] > 3) {
+      eulerAngle[2] -= 2 * M_PI;
+      laset_eulerAngle_ = (1. - alpha) * laset_eulerAngle_ + alpha * eulerAngle;
+      if (laset_eulerAngle_[2] < -M_PI) {
+        laset_eulerAngle_[2] = laset_eulerAngle_[2] + 2 * M_PI;
       }
     } else {
       laset_eulerAngle_ = (1. - alpha) * laset_eulerAngle_ + alpha * eulerAngle;
